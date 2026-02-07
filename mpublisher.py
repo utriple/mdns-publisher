@@ -15,7 +15,7 @@ from __future__ import absolute_import
 import logging
 
 import dbus
-import exceptions
+#  import exceptions
 
 
 # If the system-provided library isn't available, use a bundled copy instead.
@@ -53,7 +53,7 @@ class AvahiPublisher(object):
         """Remove all published records from mDNS."""
 
         try:
-            for group in self.published.itervalues():
+            for group in iter(self.published.values()):
                 group.Reset()
         except dbus.exceptions.DBusException as e:  # ...don't spam on broken connection.
             if e.get_dbus_name() != "org.freedesktop.DBus.Error.ServiceUnknown":
@@ -64,7 +64,7 @@ class AvahiPublisher(object):
         """Convert an FQDN into the mDNS data record format."""
 
         data = []
-        for part in fqdn.encode("ascii").split("."):
+        for part in fqdn.split("."):  ##fqdn.encode("ascii").split("."):
             if part:
                 data.append(chr(len(part)))
                 data.append(part)
@@ -87,9 +87,11 @@ class AvahiPublisher(object):
                                                    name.encode("ascii"), avahi.PROTO_UNSPEC,
                                                    dbus.UInt32(0))
             return response[2].decode("ascii")
-        except (exceptions.NameError, dbus.exceptions.DBusException):
+        except NameError:
             return None
-
+        
+        except dbus.exceptions.DBusException:
+            return None
 
     def publish_cname(self, cname, force=False):
         """Publish a CNAME record."""

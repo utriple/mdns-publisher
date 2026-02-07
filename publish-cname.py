@@ -55,38 +55,28 @@ def print_usage():
     print("\n-l/--log=<filename>")
     print(wrapper.fill("Send log messages into the specified file."))
 
+    print("\n--file=<filename>")
+    print(wrapper.fill("Send log messages into the specified file."))
 
 def parse_args():
     """Parse and enforce command-line arguments."""
 
     try:
         options, args = getopt(sys.argv[1:], "t:fvdl:h", ["ttl=", "force", "verbose",
-                                                          "daemon", "log=", "help"])
+                                                          "daemon", "log=", "file=", "help"])
     except GetoptError as e:
         print("error: %s." % e, file=sys.stderr)
         print_usage()
         sys.exit(1)
 
-    if len(args) < 1:
-        print("error: parameter(s) missing.", file=sys.stderr)
-        print_usage()
-        sys.exit(1)
-
-    # Minimal checking that the CNAMEs are properly formatted...
-    cname_re = re.compile(r"^[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63})*\.local$")
     cnames = [arg.strip().lower() for arg in args]
-
-    for cname in cnames:
-        if not cname_re.match(cname):
-            print("error: malformed hostname: %s" % cname, file=sys.stderr)
-            print_usage()
-            sys.exit(1)
 
     ttl = DEFAULT_DNS_TTL
     force = False
     verbose = False
     daemon = False
     logname = None
+    filename = None
 
     for option, value in options:
         if option in ("-h", "--help"):
@@ -102,15 +92,16 @@ def parse_args():
             daemon = True
         elif option in ("-l", "--log"):
             logname = value.strip()
+        elif option in ("--file"):
+            filename = value.strip()
 
-    return (ttl, force, verbose, daemon, logname, cnames)
+    return (ttl, force, verbose, daemon, logname, cnames, filename)
 
 
 def handle_signals(publisher, signum, frame):
     """Unpublish all mDNS records and exit cleanly."""
 
-    signame = next(v for v, k in signal.__dict__.iteritems() if k == signum)
-    logging.debug("Cleaning up on %s...", signame)
+    logging.debug("Cleaning up on %s (%s)...", signal.Signals(signum).name, signum)
     publisher.__del__()
 
     # Avahi needs time to forget us...
@@ -120,7 +111,7 @@ def handle_signals(publisher, signum, frame):
 
 
 def main():
-    (ttl, force, verbose, daemon, log, cnames) = parse_args()
+    (ttl, force, verbose, daemon, log, cnames, cnFile) = parse_args()
 
     # Since an eventual log file must support external log rotation, we must do this the hard way...
     format = logging.Formatter("%(asctime)s: %(levelname)s [%(process)d]: %(message)s")
@@ -129,6 +120,29 @@ def main():
     logger = logging.getLogger()
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+
+    # Read cnames from file if available
+    if ( cnFile is not None ):
+        try:
+            with open( cnFile, 'r') as file:
+                cnames += [(line.strip()) for line in file]
+        except FileNotFoundError:
+            print("error: File not found: ", cnFile, file=sys.stderr)
+            sys.exit(1)
+
+    if( len(cnames) < 1 ):
+        print("error: No CNAMES for publishing", file=sys.stderr)
+        print_usage()
+        sys.exit(1)
+
+    # Minimal checking that the CNAMEs are properly formatted...
+    cname_re = re.compile(r"^[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63})*\.local$")
+
+    for cname in cnames:
+        if not cname_re.match(cname):
+            print("error: malformed hostname: %s" % cname, file=sys.stderr)
+            print_usage()
+            sys.exit(1)
 
     # This must be done after initializing the logger, so that an eventual log file gets created in
     # the right place (the user will assume that relative paths start from the current directory)...
